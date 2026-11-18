@@ -1,0 +1,188 @@
+---
+title: "p8105_hw5_al4922"
+output: github_document
+date: "2026-11-15"
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(purrr)
+library(broom)
+```
+
+## Problem 1
+
+## Problem 2
+
+*** Step 1: Create Tidy Dataframe: ***
+```{r df}
+
+# 1. Start with a dataframe containing all file names
+study_df <- tibble(
+  file_path = list.files(path = "./data", pattern = "\\.csv$", full.names = TRUE)
+) %>%
+  mutate(file_name = basename(file_path))
+
+# 2. Iterate over file names, parse metadata, and read data using purrr::map
+tidy_study_data <- study_df %>%
+  mutate(
+    parsed = str_match(file_name, "^([a-z]+)_([0-9]+)\\.csv$"),
+    arm = parsed[, 2],
+    subject_id = parsed[, 3]
+  ) %>%
+  select(-parsed) %>%
+  mutate(
+    data = map(file_path, ~ read_csv(.x, show_col_types = FALSE))
+  ) %>%
+  unnest(data) %>%
+  
+  # 3. Tidy the result: pivot weekly observations from wide to long format
+  pivot_longer(
+    cols = starts_with("week_"),
+    names_to = "week",
+    values_to = "observation"
+  ) %>%
+  mutate(
+    week = str_remove(week, "week_") %>% as.integer()
+  ) %>%
+  select(subject_id, arm, week, observation, file_name)
+
+print(tidy_study_data)
+```
+*** Step 2: Spaghetti Plot ***
+```{r plot}
+# Create the spaghetti plot
+spaghetti_plot <- tidy_study_data %>%
+  ggplot(aes(x = week, y = observation, group = subject_id, color = arm)) +
+  geom_line(alpha = 0.7, linewidth = 0.8) +
+  geom_point(alpha = 0.7, size = 1.5) +
+  facet_wrap(~ arm, labeller = labeller(arm = c(con = "Control Arm", exp = "Experimental Arm"))) +
+  scale_color_manual(values = c("con" = "#2b5c8f", "exp" = "#d95f02")) +
+  labs(
+    title = "Participant Trajectories Over Time by Study Arm",
+    subtitle = "Individual subject observations across 8 weeks",
+    x = "Week",
+    y = "Observation Value",
+    color = "Study Arm"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    legend.position = "none", 
+    strip.text = element_text(face = "bold", size = 11),
+    panel.grid.minor = element_blank()
+  )
+
+print(spaghetti_plot)
+
+ggsave("spaghetti_plot.png", plot = spaghetti_plot, width = 8, height = 5, dpi = 300)
+```
+Spaghetti Plot observations over time: 
+From the two plots, we can see that while the subjects in the control arm followed a somewhat static trend where there were local increases and decreases in y-values between week to week, the y-values largely end where they started across the 8 weeks. 
+Meanwhile there is a general trend upwards (or positive trend) for the experimental arm across the 8 weeks. While there were local decreases in the y-value from week to week for individuals, the general trend is one that increases. 
+
+## Problem 3
+*** Step 1: t-testing ***
+```{r ttest}
+# Set seed for reproducibility
+set.seed(2026)
+
+# 1. Define a helper function for a single simulation iteration
+sim_ttest <- function(n = 30, mu = 0, sigma = 5) {
+  sim_data <- rnorm(n = n, mean = mu, sd = sigma)
+  
+  t.test(sim_data, mu = 0) %>%
+    tidy() %>%
+    select(mu_hat = estimate, p_value = p.value)
+}
+
+# 2. Run 5,000 simulations for each true mu in {0, 1, 2, 3, 4, 5, 6}
+sim_results <- expand_grid(
+  true_mu = 0:6,
+  iter = 1:5000
+) %>%
+  mutate(
+    test_res = map(true_mu, ~ sim_ttest(n = 30, mu = .x, sigma = 5))
+  ) %>%
+  unnest(test_res) %>%
+  mutate(
+    rejected = p_value < 0.05
+  )
+
+print(sim_results)
+```
+*** Step 2: Plots ***
+```{r plot3}
+# Plot 1: 
+power_plot <- sim_results %>%
+  group_by(true_mu) %>%
+  summarize(power = mean(rejected), .groups = "drop") %>%
+  ggplot(aes(x = true_mu, y = power)) +
+  geom_line(color = "#2b5c8f", linewidth = 1) +
+  geom_point(color = "#2b5c8f", size = 3) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "gray50") +
+  scale_x_continuous(breaks = 0:6) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent_format()) +
+  labs(
+    title = "Statistical Power vs. True Effect Size (μ)",
+    subtitle = "One-sample t-test (n = 30, σ = 5, α = 0.05, 5,000 simulations per μ)",
+    x = "True Value of μ",
+    y = "Power (Proportion Rejected)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    panel.grid.minor = element_blank()
+  )
+
+print(power_plot)
+
+
+# Plot 2
+estimate_summary <- bind_rows(
+  sim_results %>%
+    group_by(true_mu) %>%
+    summarize(mean_mu_hat = mean(mu_hat), .groups = "drop") %>%
+    mutate(sample_group = "All Samples"),
+  sim_results %>%
+    filter(rejected) %>%
+    group_by(true_mu) %>%
+    summarize(mean_mu_hat = mean(mu_hat), .groups = "drop") %>%
+    mutate(sample_group = "Rejected Nulls Only (p < 0.05)")
+)
+
+estimate_plot <- estimate_summary %>%
+  ggplot(aes(x = true_mu, y = mean_mu_hat, color = sample_group)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray50") +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  scale_x_continuous(breaks = 0:6) +
+  scale_y_continuous(breaks = 0:6) +
+  scale_color_manual(
+    values = c(
+      "All Samples" = "#2b5c8f",
+      "Rejected Nulls Only (p < 0.05)" = "#d95f02"
+    )
+  ) +
+  labs(
+    title = "Average Estimate (μ̂) vs. True Value of μ",
+    subtitle = "Comparing all simulated datasets against subsets where H₀ was rejected",
+    x = "True Value of μ",
+    y = "Average Estimate of μ̂",
+    color = "Dataset Subset"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+
+print(estimate_plot)
+```
+Plot descriptions for Problem 3: 
+1. Describe the association between effect size and power: 
+We see that as effect size increases, power (proportion of times the null was rejected) also increases. However, at about effect size of 3, power rises to close to 100% abd stays there under the current set population size, variance, and alpha. 
+
+2. Is the sample average of μ hat across tests for which the null is rejected approximately equal to the true value of μ? Why or why not?
+
