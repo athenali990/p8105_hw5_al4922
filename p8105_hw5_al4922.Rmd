@@ -14,7 +14,7 @@ library(broom)
 
 ## Problem 2
 
-*** Step 1: Create Tidy Dataframe: ***
+**Step 1: Create Tidy Dataframe:**
 ```{r df}
 
 # 1. Start with a dataframe containing all file names
@@ -49,7 +49,7 @@ tidy_study_data <- study_df %>%
 
 print(tidy_study_data)
 ```
-*** Step 2: Spaghetti Plot ***
+**Step 2: Spaghetti Plot**
 ```{r plot}
 # Create the spaghetti plot
 spaghetti_plot <- tidy_study_data %>%
@@ -82,7 +82,7 @@ From the two plots, we can see that while the subjects in the control arm follow
 Meanwhile there is a general trend upwards (or positive trend) for the experimental arm across the 8 weeks. While there were local decreases in the y-value from week to week for individuals, the general trend is one that increases. 
 
 ## Problem 3
-*** Step 1: t-testing ***
+**Step 1: t-testing**
 ```{r ttest}
 # Set seed for reproducibility
 set.seed(2026)
@@ -111,7 +111,7 @@ sim_results <- expand_grid(
 
 print(sim_results)
 ```
-*** Step 2: Plots ***
+**Step 2: Plots**
 ```{r plot3}
 # Plot 1: 
 power_plot <- sim_results %>%
@@ -137,6 +137,7 @@ power_plot <- sim_results %>%
 
 print(power_plot)
 
+ggsave("power_plot.png", plot = power_plot, width = 8, height = 5, dpi = 300)
 
 # Plot 2
 estimate_summary <- bind_rows(
@@ -179,10 +180,17 @@ estimate_plot <- estimate_summary %>%
   )
 
 print(estimate_plot)
+
+ggsave("estimate_plot.png", plot = estimate_plot, width = 8, height = 5, dpi = 300)
 ```
 Plot descriptions for Problem 3: 
+
 1. Describe the association between effect size and power: 
-We see that as effect size increases, power (proportion of times the null was rejected) also increases. However, at about effect size of 3, power rises to close to 100% abd stays there under the current set population size, variance, and alpha. 
+
+We see that as effect size increases, power (proportion of times the null was rejected) also increases. However, at about effect size of 3, power rises to close to 100% and stays there under the current set population size, variance, and alpha. 
 
 2. Is the sample average of μ hat across tests for which the null is rejected approximately equal to the true value of μ? Why or why not?
 
+Not across al values of μ. As shown by the orange "Rejected Nulls Only" curve, the sample average of μ(hat) among rejected tests is inflated above the true value of μ for small positive effect sizes (μ = 1,2,3) and only converges back to true μ when μ = 0 or when μ >= 4. 
+
+This occurs because of selection bias. When statsitical power islow, conditioning on p < 0.05 filters out estimates close to zero and retains only extreme upper-tail samples where random positive noise pushed μ(hat) past the critical t-value. By contrast, at μ = 0 positive and negative false-positive rejections cancel out symmetrically around zero, while at high effect sizes (μ >= 4) near-100% power ensures almost all datasets reject the null without tuncation. 
